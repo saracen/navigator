@@ -67,6 +67,19 @@ func (i *Index) Get(name, version string) (*repo.ChartVersion, error) {
 	return i.file.Get(name, version)
 }
 
+// Count returns the number of charts and versions indexed.
+func (i *Index) Count() (int, int) {
+	i.mutex.RLock()
+	defer i.mutex.RUnlock()
+
+	var versions int
+	for _, v := range i.file.Entries {
+		versions += len(v)
+	}
+
+	return len(i.file.Entries), versions
+}
+
 // WriteTo writes out a YAML serialized representation of the Index. This data
 // is cached so that subsequent calls won't re-serialize an index that has not
 // changed.

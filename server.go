@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"path"
@@ -28,36 +27,47 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	begin := time.Now()
 
-	err = s.serve(w, r)
+	code, err := s.serve(w, r)
 	if err == nil {
+		if code != http.StatusOK {
+			w.WriteHeader(code)
+		}
 		level.Info(s.logger).Log("event", "request", "client", host, "method", r.Method, "path", r.URL.Path, "took", time.Since(begin))
 	} else {
+		http.Error(w, err.Error(), code)
 		level.Error(s.logger).Log("event", "request", "client", host, "method", r.Method, "path", r.URL.Path, "took", time.Since(begin), "err", err)
 	}
 }
 
-func (s *server) serve(w http.ResponseWriter, r *http.Request) (err error) {
+func (s *server) serve(w http.ResponseWriter, r *http.Request) (code int, err error) {
 	dir, file := path.Split(r.URL.Path)
 	// serve index.yaml
 	if file == "index.yaml" {
 		_, err := s.index.WriteTo(w)
-		return err
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	}
 
 	// serve packaged chart
 	chart := strings.SplitN(strings.Trim(dir, "/"), "/", 2)
 	if len(chart) != 2 {
-		return fmt.Errorf("Invalid package name")
+		return http.StatusNotFound, repository.ErrInvalidPackageName
 	}
 
 	if repo, ok := s.repos[chart[0]]; ok {
 		vcp, err := repo.ChartPackage(chart[1])
 		if err != nil {
-			return err
+			return http.StatusInternalServerError, err
 		}
 
-		return vcp.Archive(w)
+		if err = vcp.Archive(w); err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		return http.StatusOK, nil
 	}
 
-	return fmt.Errorf("Repository not found")
+	return http.StatusNotFound, repository.ErrRepositoryNotFound
 }

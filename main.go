@@ -96,7 +96,15 @@ func main() {
 	level.Info(logger).Log("event", "listening", "transport", "HTTP", "addr", *httpAddr)
 
 	go func() {
-		panic(http.ListenAndServe(*httpAddr, &server{logger, index, repositories}))
+		srv := &http.Server{
+			Addr:         *httpAddr,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  120 * time.Second,
+			Handler:      &server{logger, index, repositories},
+		}
+
+		panic(srv.ListenAndServe())
 	}()
 
 	for range time.Tick(*interval) {

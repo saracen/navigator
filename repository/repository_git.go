@@ -89,10 +89,12 @@ func (r *repository) Update() (err error) {
 	level.Info(r.logger).Log("event", "fetching", "repository", r.url, "took", time.Since(begin))
 
 	defer func(begin time.Time) {
+		charts, versions := r.index.Count()
+
 		if err == nil {
-			level.Info(r.logger).Log("event", "indexing", "repository", r.url, "took", time.Since(begin))
+			level.Info(r.logger).Log("event", "indexing", "repository", r.url, "charts", charts, "versions", versions, "took", time.Since(begin))
 		} else {
-			level.Error(r.logger).Log("event", "indexing", "repository", r.url, "took", time.Since(begin), "err", err)
+			level.Error(r.logger).Log("event", "indexing", "repository", r.url, "charts", charts, "versions", versions, "took", time.Since(begin), "err", err)
 		}
 	}(time.Now())
 
@@ -186,10 +188,12 @@ func (r *repository) processFile(c *object.Commit, directory string) func(f *obj
 func (r *repository) ChartPackage(name string) (Archiver, error) {
 	commitName := strings.SplitN(name, "/", 2)
 	if len(commitName) != 2 {
-		return nil, fmt.Errorf("Invalid package name")
+		return nil, ErrInvalidPackageName
 	}
 
-	hash := plumbing.NewHash(commitName[0])
+	commit, name := commitName[0], commitName[1]
+
+	hash := plumbing.NewHash(commit)
 	c, err := r.backend.CommitObject(hash)
 	if err != nil {
 		return nil, err
@@ -200,8 +204,19 @@ func (r *repository) ChartPackage(name string) (Archiver, error) {
 		return nil, err
 	}
 
-	// TODO: Check that its in r.directories
-	tree, err = tree.Tree(commitName[1])
+	// check that the package is in one of the specified directories
+	found := false
+	for _, directory := range r.directories {
+		if strings.HasPrefix(name, directory) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, object.ErrDirectoryNotFound
+	}
+
+	tree, err = tree.Tree(name)
 	if err != nil {
 		return nil, err
 	}

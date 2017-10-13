@@ -2,6 +2,12 @@ package repository
 
 import (
 	"io"
+	"errors"
+)
+
+var (
+	ErrInvalidPackageName = errors.New("invalid package name")
+	ErrRepositoryNotFound = errors.New("repository not found")
 )
 
 // Archiver produces a compressed tar archive.
