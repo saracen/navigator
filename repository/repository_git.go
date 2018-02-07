@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
@@ -50,7 +51,7 @@ type repository struct {
 	head plumbing.Hash
 }
 
-// NewRepository returns a new git-backed based repository.
+// NewGitBackedRepository returns a new git-backed based repository.
 func NewGitBackedRepository(logger log.Logger, index *Index, name, url string, directories []string) Repository {
 	return &repository{
 		logger:      logger,
@@ -80,7 +81,7 @@ func (r *repository) Update() (err error) {
 			return err
 		}
 	} else {
-		err := r.backend.Fetch(&git.FetchOptions{})
+		err := r.backend.Fetch(&git.FetchOptions{RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"}})
 		if err != nil && err != git.NoErrAlreadyUpToDate {
 			return err
 		}

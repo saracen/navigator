@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"io"
 	"errors"
+	"io"
 )
 
 var (

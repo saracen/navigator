@@ -34,7 +34,9 @@ func (i *repositoryURLs) Set(value string) error {
 	}
 
 	rurl := repositoryURL{}
-	rurl.Directories = strings.Split(uri.Fragment, ",")
+	if len(uri.Fragment) > 0 {
+		rurl.Directories = strings.Split(uri.Fragment, ",")
+	}
 
 	uri.Fragment = ""
 	rurl.URL = uri.String()
