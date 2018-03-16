@@ -6,7 +6,9 @@ import (
 )
 
 var (
+	// ErrInvalidPackageName is raised when a chart package cannot be found
 	ErrInvalidPackageName = errors.New("invalid package name")
+	// ErrRepositoryNotFound is raised when the helm repository referenced in a package link cannot be found
 	ErrRepositoryNotFound = errors.New("repository not found")
 )
 

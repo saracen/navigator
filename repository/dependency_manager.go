@@ -166,5 +166,18 @@ func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, e
 		return "", err
 	}
 
-	return chart.URLs[0], nil
+	var rawChartURL string
+	if len(chart.URLs) > 0 {
+		rawChartURL = chart.URLs[0]
+	}
+
+	chartURL, err := url.Parse(rawChartURL)
+	if err == nil && !chartURL.IsAbs() {
+		chartURL, err = url.Parse(dep.Repository + "/" + chartURL.Path)
+	}
+	if err != nil {
+		return "", fmt.Errorf("Chart dependency %v:%v has invalid package url: %v", dep.Name, dep.Version, rawChartURL)
+	}
+
+	return chartURL.String(), nil
 }
