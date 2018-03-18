@@ -20,6 +20,7 @@ type Archiver interface {
 // Repository represents a generic repository.
 type Repository interface {
 	URL() string
+	Name() string
 	ChartPackage(string) (Archiver, error)
 	Update() error
 }

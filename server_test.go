@@ -7,29 +7,21 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
-	"github.com/saracen/navigator/repository"
 	"github.com/stretchr/testify/suite"
 )
 
 type ServerTestSuite struct {
 	suite.Suite
-	srv *server
+	srv *Server
 }
 
 func (suite *ServerTestSuite) SetupSuite() {
-	logger := log.NewNopLogger()
-	index := repository.NewIndex()
-	suite.srv = &server{
-		logger: logger,
-		index:  index,
-		repos: map[string]repository.Repository{
-			"test": repository.NewGitBackedRepository(logger, index, "test", "./.git", []string{"repository/testdata/charts"}),
-		},
-	}
+	suite.srv = NewServer(log.NewNopLogger())
+	suite.srv.AddGitBackedRepository("./.git", []string{"repository/testdata/charts"})
 }
 
 func (suite *ServerTestSuite) TestServeHTTP() {
-	if !suite.NoError(suite.srv.repos["test"].Update(), "error fetching index") {
+	if !suite.NoError(suite.srv.UpdateRepositories(), "error fetching index") {
 		return
 	}
 

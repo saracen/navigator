@@ -36,7 +36,7 @@ func (suite *DependencyManagerTestSuite) TestDownload() {
 	defer ts.Close()
 
 	dependencies := []*chartutil.Dependency{
-		&chartutil.Dependency{Name: "mychart", Version: "0.1.0", Repository: ts.URL},
+		{Name: "mychart", Version: "0.1.0", Repository: ts.URL},
 	}
 
 	downloaded, err := suite.dm.Download(dependencies)

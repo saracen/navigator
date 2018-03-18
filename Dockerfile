@@ -13,7 +13,7 @@ RUN go get github.com/itchio/gothub
 
 COPY . ./
 
-RUN CGO_ENABLED=0 go test ./...
+RUN go test -coverprofile coverage.txt -covermode atomic ./...
 RUN CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -a -installsuffix cgo -o navigator-darwin-amd64 .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -a -installsuffix cgo -o navigator-linux-amd64 .
 RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -a -installsuffix cgo -o navigator-windows-amd64.exe .
@@ -25,6 +25,15 @@ ARG GITHUB_TOKEN
 ARG GIT_USERNAME
 ARG GIT_REPOSITORY
 ARG SOURCE_BRANCH
+ARG CODECOV_TOKEN
+
+RUN apk add --no-cache --virtual .build-deps curl bash git
+
+COPY ./.git ./
+COPY --from=builder /go/src/github.com/saracen/navigator/coverage.txt ./
+RUN curl -s -o ./.codecov https://codecov.io/bash && \
+    chmod +x ./.codecov && \
+    ./.codecov -X gcov -X coveragepy -X xcode -X fix -X search -f coverage.txt
 
 COPY --from=builder /go/bin/gothub ./
 RUN ./gothub release --user $GIT_USERNAME --repo $GIT_REPOSITORY --tag $SOURCE_BRANCH --name $SOURCE_BRANCH --draft

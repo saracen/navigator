@@ -68,6 +68,10 @@ func (r *repository) URL() string {
 	return r.url
 }
 
+func (r *repository) Name() string {
+	return r.name
+}
+
 func (r *repository) Update() (err error) {
 	begin := time.Now()
 

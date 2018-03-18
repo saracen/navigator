@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"path"
@@ -13,13 +15,23 @@ import (
 	"github.com/saracen/navigator/repository"
 )
 
-type server struct {
+// Server is the navigator server that handles HTTP requests for charts
+type Server struct {
 	logger log.Logger
 	index  *repository.Index
 	repos  map[string]repository.Repository
 }
 
-func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// NewServer returns a new server
+func NewServer(logger log.Logger) *Server {
+	return &Server{
+		logger: logger,
+		index:  repository.NewIndex(),
+		repos:  make(map[string]repository.Repository),
+	}
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -39,7 +51,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) serve(w http.ResponseWriter, r *http.Request) (code int, err error) {
+func (s *Server) serve(w http.ResponseWriter, r *http.Request) (code int, err error) {
 	dir, file := path.Split(r.URL.Path)
 	// serve index.yaml
 	if file == "index.yaml" {
@@ -70,4 +82,26 @@ func (s *server) serve(w http.ResponseWriter, r *http.Request) (code int, err er
 	}
 
 	return http.StatusNotFound, repository.ErrRepositoryNotFound
+}
+
+// AddGitBackedRepository adds a new git backed repository to the server
+func (s *Server) AddGitBackedRepository(url string, directories []string) {
+	hash := fnv.New32()
+	hash.Write([]byte(url))
+	name := fmt.Sprintf("%x", hash.Sum(nil))
+
+	level.Info(s.logger).Log("event", "add-repository", "repository", url, "directories", strings.Join(directories, ","))
+
+	s.repos[name] = repository.NewGitBackedRepository(s.logger, s.index, name, url, directories)
+}
+
+// UpdateRepositories fetches changes from the source repositories and indexes new updates
+func (s *Server) UpdateRepositories() error {
+	for _, repo := range s.repos {
+		err := repo.Update()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

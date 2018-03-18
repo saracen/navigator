@@ -2,8 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"hash/fnv"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,8 +10,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-
-	"github.com/saracen/navigator/repository"
 )
 
 type repositoryURL struct {
@@ -46,7 +42,7 @@ func (i *repositoryURLs) Set(value string) error {
 	return nil
 }
 
-func main() {
+func configure(args []string) (*Server, time.Duration, *http.Server) {
 	fs := flag.NewFlagSet("navigator", flag.ExitOnError)
 
 	var (
@@ -56,8 +52,7 @@ func main() {
 	)
 
 	fs.Var(&urls, "url", "Git repository to index")
-
-	fs.Parse(os.Args[1:])
+	fs.Parse(args)
 
 	var logger log.Logger
 	{
@@ -66,50 +61,36 @@ func main() {
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 	}
 
-	index := repository.NewIndex()
+	navigator := NewServer(logger)
 
-	repositories := make(map[string]repository.Repository, len(urls))
 	for _, url := range urls {
-		hash := fnv.New32()
-		hash.Write([]byte(url.URL))
-		name := fmt.Sprintf("%x", hash.Sum(nil))
-
-		level.Info(logger).Log("event", "add-repository", "repository", url.URL, "directories", strings.Join(url.Directories, ","))
-
-		repositories[name] = repository.NewGitBackedRepository(logger, index, name, url.URL, url.Directories)
+		navigator.AddGitBackedRepository(url.URL, url.Directories)
 	}
 
-	update := func() error {
-		for _, repo := range repositories {
-			err := repo.Update()
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
+	return navigator, *interval, &http.Server{
+		Addr:         *httpAddr,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+		Handler:      navigator,
 	}
+}
+
+func main() {
+	navigator, interval, srv := configure(os.Args[1:])
 
 	// initial update
-	if err := update(); err != nil {
+	if err := navigator.UpdateRepositories(); err != nil {
 		panic(err)
 	}
 
-	level.Info(logger).Log("event", "listening", "transport", "HTTP", "addr", *httpAddr)
+	level.Info(navigator.logger).Log("event", "listening", "transport", "HTTP", "addr", srv.Addr)
 
 	go func() {
-		srv := &http.Server{
-			Addr:         *httpAddr,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  120 * time.Second,
-			Handler:      &server{logger, index, repositories},
-		}
-
 		panic(srv.ListenAndServe())
 	}()
 
-	for range time.Tick(*interval) {
-		update()
+	for range time.Tick(interval) {
+		navigator.UpdateRepositories()
 	}
 }

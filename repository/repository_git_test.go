@@ -20,6 +20,7 @@ func (suite *RepositoryGitTestSuite) SetupSuite() {
 	suite.index = NewIndex()
 	suite.repo = NewGitBackedRepository(log.NewNopLogger(), suite.index, "", "../.git", []string{"repository/testdata/charts"})
 	suite.Nil(suite.repo.Update(), "error updating git repository")
+	suite.Nil(suite.repo.Update(), "error fetching new git updates")
 }
 
 func (suite *RepositoryGitTestSuite) TestURL() {

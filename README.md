@@ -1,12 +1,33 @@
 # Navigator
 
-Navigator is an easy to use Helm Chart Repository.
+[![Go Report Card](https://goreportcard.com/badge/github.com/saracen/navigator)](https://goreportcard.com/report/github.com/saracen/navigator)
+[![GoDoc](https://godoc.org/github.com/saracen/navigation?status.svg)](https://godoc.org/github.com/saracen/navigator)
+[![codecov](https://codecov.io/gh/saracen/navigator/branch/master/graph/badge.svg)](https://codecov.io/gh/saracen/navigator)
+
+Navigator is an easy to use Helm Chart Repository written in Go.
 
 Navigator indexes charts directly from a git repository, and is able to archive and serve all versions by reading the commit history. All operations are done in-memory and chart packages are generated on the fly.
 
 Cloning and indexing https://github.com/kubernetes/charts takes under 10 seconds. Archiving and serving a chart takes milliseconds.
 
-##### Example: Offical Helm git repository, stable directory
+##### Required
+- A git repository
+
+##### *Not* Required
+- A cloud storage backend and the associated configuration
+- CI/CD processes to build and upload charts
+
+## Installation
+### Binaries
+Binaries can be found on the [releases](https://github.com/saracen/navigator/releases) page.
+
+### Docker
+```
+docker pull saracen/navigator
+```
+
+## Examples
+##### Example: Mirror of official Helm git repository, stable directory
 ```
 $ docker run saracen/navigator \
 	--url https://github.com/kubernetes/charts#stable --interval 5m
@@ -17,7 +38,7 @@ level=info event=indexing repository=https://github.com/kubernetes/charts charts
 level=info event=listening transport=HTTP addr=:8081
 ```
 ---
-##### Example: Offical Helm git repository, stable + incubator directory
+##### Example: Mirror of official Helm git repository, stable + incubator directory
 ```
 $ docker run saracen/navigator \
 	--url https://github.com/kubernetes/charts#stable,incubator --interval 5m
@@ -28,7 +49,10 @@ level=info event=indexing repository=https://github.com/kubernetes/charts charts
 level=info event=listening transport=HTTP addr=:8081
 ```
 ---
-###### Example: A bunch of different repositories from GitHub
+##### Example: A bunch of different repositories from GitHub
+
+__Note__: Only combine repositories that you trust. Navigator will index the most recently committed chart and version.
+This could allow a bad repository to override a chart version from another repository.
 ```
 $ docker run saracen/navigator \
 	--url https://github.com/KubeLondon/london.k8s.uk#chart \
