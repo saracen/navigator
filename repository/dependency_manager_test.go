@@ -26,10 +26,10 @@ type DependencyManagerTestSuite struct {
 }
 
 func (suite *DependencyManagerTestSuite) SetupSuite() {
-	suite.dm = NewDependencyManager(log.NewNopLogger())
+	suite.dm = NewDependencyManager(log.NewNopLogger(), NewIndexManager())
 }
 
-func (suite *DependencyManagerTestSuite) TestDownload() {
+func (suite *DependencyManagerTestSuite) TestRemoteDownload() {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(dependencyIndexYaml))
 	}))

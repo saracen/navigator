@@ -17,17 +17,20 @@ import (
 
 // Server is the navigator server that handles HTTP requests for charts
 type Server struct {
-	logger log.Logger
-	index  *repository.Index
-	repos  map[string]repository.Repository
+	logger            log.Logger
+	indexManager      *repository.IndexManager
+	dependencyManager *repository.DependencyManager
+	repos             map[string]repository.Repository
 }
 
 // NewServer returns a new server
 func NewServer(logger log.Logger) *Server {
+	indexManager := repository.NewIndexManager()
 	return &Server{
-		logger: logger,
-		index:  repository.NewIndex(),
-		repos:  make(map[string]repository.Repository),
+		logger:            logger,
+		indexManager:      indexManager,
+		dependencyManager: repository.NewDependencyManager(logger, indexManager),
+		repos:             make(map[string]repository.Repository),
 	}
 }
 
@@ -52,18 +55,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) (code int, err error) {
-	dir, file := path.Split(r.URL.Path)
+	indexName, file := path.Split(r.URL.Path)
+	indexName = strings.Trim(indexName, "/")
+
 	// serve index.yaml
 	if file == "index.yaml" {
-		_, err := s.index.WriteTo(w)
+		index, err := s.indexManager.Get(indexName)
 		if err != nil {
+			return http.StatusNotFound, repository.ErrIndexNotFound
+		}
+
+		if _, err = index.WriteTo(w); err != nil {
 			return http.StatusInternalServerError, err
 		}
 		return http.StatusOK, nil
 	}
 
 	// serve packaged chart
-	chart := strings.SplitN(strings.Trim(dir, "/"), "/", 2)
+	chart := strings.SplitN(indexName, "/", 2)
 	if len(chart) != 2 {
 		return http.StatusNotFound, repository.ErrInvalidPackageName
 	}
@@ -92,7 +101,20 @@ func (s *Server) AddGitBackedRepository(url string, directories []string) {
 
 	level.Info(s.logger).Log("event", "add-repository", "repository", url, "directories", strings.Join(directories, ","))
 
-	s.repos[name] = repository.NewGitBackedRepository(s.logger, s.index, name, url, directories)
+	var indexDirectories []repository.IndexDirectory
+	for _, directory := range directories {
+		di := strings.SplitN(directory, "@", 2)
+
+		indexName := "default"
+		if len(di) == 2 {
+			indexName = di[1]
+		}
+
+		s.indexManager.Create(indexName)
+		indexDirectories = append(indexDirectories, repository.IndexDirectory{Name: di[0], IndexName: indexName})
+	}
+
+	s.repos[name] = repository.NewGitBackedRepository(s.logger, s.dependencyManager, name, url, indexDirectories)
 }
 
 // UpdateRepositories fetches changes from the source repositories and indexes new updates

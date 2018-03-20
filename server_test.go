@@ -17,7 +17,7 @@ type ServerTestSuite struct {
 
 func (suite *ServerTestSuite) SetupSuite() {
 	suite.srv = NewServer(log.NewNopLogger())
-	suite.srv.AddGitBackedRepository("./.git", []string{"repository/testdata/charts"})
+	suite.srv.AddGitBackedRepository("./.git", []string{"repository/testdata/charts@test"})
 }
 
 func (suite *ServerTestSuite) TestServeHTTP() {
@@ -35,7 +35,12 @@ func (suite *ServerTestSuite) TestServeHTTP() {
 		suite.NoError(err, "error reading index")
 	}
 
-	chart, err := suite.srv.index.Get("mychart", "0.1.0")
+	index, err := suite.srv.indexManager.Get("test")
+	if !suite.NoError(err, "error getting named index") {
+		return
+	}
+
+	chart, err := index.Get("mychart", "0.1.0")
 	if suite.NoError(err, "error checking for chart") {
 		res, err := http.Get(ts.URL + "/" + chart.URLs[0])
 		if suite.NoError(err, "error fetching chart") {

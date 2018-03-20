@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -25,8 +26,14 @@ type DependencyManager struct {
 	client *http.Client
 	logger log.Logger
 
-	repositories      map[string]*singleflightIndex
-	repositoriesMutex sync.Mutex
+	indexManager *IndexManager
+
+	// local repositories
+	local map[string]Repository
+
+	// remote repositories
+	remote      map[string]*singleflightIndex
+	remoteMutex sync.Mutex
 }
 
 type singleflightIndex struct {
@@ -35,12 +42,24 @@ type singleflightIndex struct {
 }
 
 // NewDependencyManager returns a new dependency manager.
-func NewDependencyManager(logger log.Logger) *DependencyManager {
+func NewDependencyManager(logger log.Logger, indexManager *IndexManager) *DependencyManager {
 	return &DependencyManager{
 		client:       &http.Client{Timeout: time.Second * 10},
 		logger:       logger,
-		repositories: make(map[string]*singleflightIndex),
+		indexManager: indexManager,
+		local:        make(map[string]Repository),
+		remote:       make(map[string]*singleflightIndex),
 	}
+}
+
+// AddRepository adds a local repository for resolving local dependencies.
+func (dm *DependencyManager) AddRepository(repo Repository) {
+	dm.local[repo.Name()] = repo
+}
+
+// IndexManager returns the index manager.
+func (dm *DependencyManager) IndexManager() *IndexManager {
+	return dm.indexManager
 }
 
 // Download fetches multiple dependencies concurrently and returns a map of
@@ -58,18 +77,26 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 	defer cancel()
 
 	for idx, dep := range dependencies {
-		repository, err := url.Parse(dep.Repository)
-		if err != nil {
-			return nil, fmt.Errorf("Chart dependency %v:%v has invalid repository: %v", dep.Name, dep.Version, dep.Repository)
-		}
+		alias := strings.HasPrefix(dep.Repository, "@") || strings.HasPrefix(dep.Repository, "alias:")
+		if !alias {
+			repository, err := url.Parse(dep.Repository)
+			if err != nil {
+				return nil, fmt.Errorf("Chart dependency %v:%v has invalid repository: %v", dep.Name, dep.Version, dep.Repository)
+			}
 
-		if repository.Scheme != "http" && repository.Scheme != "https" {
-			return nil, fmt.Errorf("Chart dependency %v:%v has unsupported repository scheme: %v://", dep.Name, dep.Version, repository.Scheme)
+			if repository.Scheme != "http" && repository.Scheme != "https" {
+				return nil, fmt.Errorf("Chart dependency %v:%v has unsupported repository scheme: %v://", dep.Name, dep.Version, repository.Scheme)
+			}
 		}
 
 		wg.Add(1)
-		go func(idx int, dep *chartutil.Dependency) {
+		go func(idx int, dep *chartutil.Dependency, alias bool) {
 			defer wg.Done()
+
+			if alias {
+				states[idx].data, states[idx].err = dm.fetchLocalPackage(dep)
+				return
+			}
 
 			url, err := dm.getPackageURL(dep)
 			if err != nil {
@@ -85,7 +112,7 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 			}
 
 			states[idx].data = archive
-		}(idx, dep)
+		}(idx, dep, alias)
 	}
 
 	wg.Wait()
@@ -100,6 +127,29 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 	}
 
 	return archives, nil
+}
+
+func (dm *DependencyManager) fetchLocalPackage(dep *chartutil.Dependency) (body []byte, err error) {
+	indexName := strings.TrimPrefix(strings.TrimPrefix(dep.Repository, "alias:"), "@")
+	index, err := dm.indexManager.Get(indexName)
+	if err != nil {
+		return nil, err
+	}
+
+	chart, err := index.Get(dep.Name, dep.Version)
+	if err != nil {
+		return nil, err
+	}
+
+	archiver, err := dm.local[chart.Annotations[RepositoryAnnotation]].ChartPackage(chart.Annotations[PathAnnotation])
+	if err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	err = archiver.Archive(buf)
+
+	return buf.Bytes(), err
 }
 
 func (dm *DependencyManager) download(ctx context.Context, url string) (body []byte, err error) {
@@ -127,16 +177,16 @@ func (dm *DependencyManager) download(ctx context.Context, url string) (body []b
 }
 
 func (dm *DependencyManager) repository(repository string) *singleflightIndex {
-	dm.repositoriesMutex.Lock()
-	defer dm.repositoriesMutex.Unlock()
+	dm.remoteMutex.Lock()
+	defer dm.remoteMutex.Unlock()
 
 	// Initialise the repository with an empty index. The repository is fetched
 	// and updated when a package required does not exist in it.
-	if _, ok := dm.repositories[repository]; !ok {
-		dm.repositories[repository] = &singleflightIndex{Index: NewIndex()}
+	if _, ok := dm.remote[repository]; !ok {
+		dm.remote[repository] = &singleflightIndex{Index: NewIndex()}
 	}
 
-	return dm.repositories[repository]
+	return dm.remote[repository]
 }
 
 func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, error) {
@@ -145,11 +195,9 @@ func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, e
 	index.Lock()
 	defer index.Unlock()
 
-	// attempt to get chart dependency
-	chart, err := index.Get(dep.Name, dep.Version)
-
 	// update repository if dependency doesn't exist
-	if err != nil {
+	// todo: when else do we update a remote repository?
+	if _, err := index.Get(dep.Name, dep.Version); err != nil {
 		body, err := dm.download(context.TODO(), fmt.Sprintf("%s/index.yaml", strings.TrimSuffix(dep.Repository, "/")))
 		if err != nil {
 			return "", err
@@ -160,8 +208,7 @@ func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, e
 		}
 	}
 
-	// make another attempt to fetch chart dependency
-	chart, err = index.Get(dep.Name, dep.Version)
+	chart, err := index.Get(dep.Name, dep.Version)
 	if err != nil {
 		return "", err
 	}

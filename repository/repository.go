@@ -3,6 +3,15 @@ package repository
 import (
 	"errors"
 	"io"
+	"strings"
+)
+
+const (
+	// RepositoryAnnotation is an annotation to tell navigator what repository a chart is from
+	RepositoryAnnotation = "navigator/repository"
+
+	// PathAnnotation is an annotation to tell navigator what path within a repository a chart is from
+	PathAnnotation = "navigator/path"
 )
 
 var (
@@ -23,4 +32,23 @@ type Repository interface {
 	Name() string
 	ChartPackage(string) (Archiver, error)
 	Update() error
+}
+
+// IndexDirectory maps a directory to a named index
+type IndexDirectory struct {
+	IndexName string
+	Name      string
+}
+
+// IndexDirectories is a slice of IndexDirectory
+type IndexDirectories []IndexDirectory
+
+// Match checks whether a path matches any of the index directories
+func (id IndexDirectories) Match(path string) bool {
+	for _, directory := range id {
+		if strings.HasPrefix(path, directory.Name) {
+			return true
+		}
+	}
+	return false
 }

@@ -46,7 +46,7 @@ func configure(args []string) (*Server, time.Duration, *http.Server) {
 	fs := flag.NewFlagSet("navigator", flag.ExitOnError)
 
 	var (
-		httpAddr = fs.String("http-addr", ":8081", "HTTP listen address")
+		httpAddr = fs.String("http-addr", ":8080", "HTTP listen address")
 		interval = fs.Duration("interval", time.Minute*5, "Poll interval for git repository updates")
 		urls     repositoryURLs
 	)

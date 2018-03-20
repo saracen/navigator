@@ -38,11 +38,11 @@ type repository struct {
 	name        string
 	url         string
 	backend     *git.Repository
-	directories []string
+	directories []IndexDirectory
 
 	dm *DependencyManager
 
-	index *Index
+	indexManager *IndexManager
 
 	// A map of chart filename + file hash, so we know which charts have already
 	// been processed
@@ -52,16 +52,19 @@ type repository struct {
 }
 
 // NewGitBackedRepository returns a new git-backed based repository.
-func NewGitBackedRepository(logger log.Logger, index *Index, name, url string, directories []string) Repository {
-	return &repository{
-		logger:      logger,
-		name:        name,
-		url:         url,
-		directories: directories,
-		visited:     make(map[string]struct{}),
-		index:       index,
-		dm:          NewDependencyManager(logger),
+func NewGitBackedRepository(logger log.Logger, dependencyManager *DependencyManager, name, url string, directories []IndexDirectory) Repository {
+	repo := &repository{
+		logger:       logger,
+		name:         name,
+		url:          url,
+		directories:  directories,
+		visited:      make(map[string]struct{}),
+		indexManager: dependencyManager.IndexManager(),
+		dm:           dependencyManager,
 	}
+
+	dependencyManager.AddRepository(repo)
+	return repo
 }
 
 func (r *repository) URL() string {
@@ -93,17 +96,16 @@ func (r *repository) Update() (err error) {
 
 	level.Info(r.logger).Log("event", "fetching", "repository", r.url, "took", time.Since(begin))
 
+	var ref *plumbing.Reference
 	defer func(begin time.Time) {
-		charts, versions := r.index.Count()
-
 		if err == nil {
-			level.Info(r.logger).Log("event", "indexing", "repository", r.url, "charts", charts, "versions", versions, "took", time.Since(begin))
+			level.Info(r.logger).Log("event", "indexing", "repository", r.url, "head", ref.Hash(), "took", time.Since(begin))
 		} else {
-			level.Error(r.logger).Log("event", "indexing", "repository", r.url, "charts", charts, "versions", versions, "took", time.Since(begin), "err", err)
+			level.Error(r.logger).Log("event", "indexing", "repository", r.url, "head", ref.Hash(), "took", time.Since(begin), "err", err)
 		}
 	}(time.Now())
 
-	ref, err := r.backend.Head()
+	ref, err = r.backend.Head()
 	if err != nil {
 		return err
 	}
@@ -134,9 +136,13 @@ func (r *repository) parseCommit(c *object.Commit) error {
 		return err
 	}
 
-	if len(r.directories) > 0 {
-		for _, directory := range r.directories {
-			subtree, err := tree.Tree(directory)
+	for _, directory := range r.directories {
+		var subtree *object.Tree
+
+		if directory.Name == "" || directory.Name == "." {
+			subtree = tree
+		} else {
+			subtree, err = tree.Tree(directory.Name)
 			if err == object.ErrDirectoryNotFound {
 				level.Debug(r.logger).Log("event", "parsing", "commit", c.Hash.String(), "directory", directory, "err", err)
 				return nil
@@ -144,17 +150,17 @@ func (r *repository) parseCommit(c *object.Commit) error {
 			if err != nil {
 				return err
 			}
+		}
 
-			if err = subtree.Files().ForEach(r.processFile(c, directory)); err != nil {
-				return err
-			}
+		if err = subtree.Files().ForEach(r.processFile(c, directory)); err != nil {
+			return err
 		}
 	}
 
-	return tree.Files().ForEach(r.processFile(c, ""))
+	return nil
 }
 
-func (r *repository) processFile(c *object.Commit, directory string) func(f *object.File) error {
+func (r *repository) processFile(c *object.Commit, directory IndexDirectory) func(f *object.File) error {
 	return func(f *object.File) error {
 		// ignore if not Chart.yaml file
 		if path.Base(f.Name) != chartutil.ChartfileName {
@@ -164,7 +170,7 @@ func (r *repository) processFile(c *object.Commit, directory string) func(f *obj
 		// ignore if already processed chart
 		key := f.Name + f.Hash.String()
 		if _, ok := r.visited[key]; ok {
-			level.Debug(r.logger).Log("event", "already-indexed", "commit", c.Hash.String(), "directory", directory, "file", f.Name)
+			level.Debug(r.logger).Log("event", "already-indexed", "commit", c.Hash.String(), "directory", directory.Name, "file", f.Name)
 			return nil
 		}
 		r.visited[key] = struct{}{}
@@ -172,16 +178,29 @@ func (r *repository) processFile(c *object.Commit, directory string) func(f *obj
 		// load chart metadata
 		md, err := r.loadMetadataFile(f)
 		if err != nil {
-			level.Error(r.logger).Log("event", "parsing", "commit", c.Hash.String(), "directory", directory, "file", f.Name, "err", err)
+			level.Error(r.logger).Log("event", "parsing", "commit", c.Hash.String(), "directory", directory.Name, "file", f.Name, "err", err)
 			return nil
 		}
 
 		filename := fmt.Sprintf("%s-%s.tgz", md.Name, md.Version)
-		url := path.Join(r.name, c.Hash.String(), directory, path.Dir(f.Name), filename)
+		url := path.Join(r.name, c.Hash.String(), directory.Name, path.Dir(f.Name), filename)
+
+		// get index for this repository
+		index, err := r.indexManager.Get(directory.IndexName)
+		if err != nil {
+			return err
+		}
+
+		// add annotation so the dependency manager can easily find what repository this chart belongs to
+		if md.Annotations == nil {
+			md.Annotations = make(map[string]string)
+		}
+		md.Annotations[RepositoryAnnotation] = r.name
+		md.Annotations[PathAnnotation] = path.Join(c.Hash.String(), directory.Name)
 
 		// index chart
-		if added := r.index.Add(md, []string{url}, c.Committer.When); added {
-			level.Debug(r.logger).Log("event", "indexed", "commit", c.Hash.String(), "directory", directory, "file", f.Name, "chart", md.Name, "version", md.Version)
+		if added := index.Add(md, []string{url}, c.Committer.When); added {
+			level.Debug(r.logger).Log("event", "indexed", "commit", c.Hash.String(), "directory", directory.Name, "file", f.Name, "chart", md.Name, "version", md.Version)
 		}
 
 		return nil
@@ -210,14 +229,7 @@ func (r *repository) ChartPackage(name string) (Archiver, error) {
 	}
 
 	// check that the package is in one of the specified directories
-	found := false
-	for _, directory := range r.directories {
-		if strings.HasPrefix(name, directory) {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !IndexDirectories(r.directories).Match(name) {
 		return nil, object.ErrDirectoryNotFound
 	}
 
@@ -292,7 +304,7 @@ func (r *repository) loadDependencies(t *object.Tree) ([]*chartutil.Dependency, 
 	}
 
 	if requirements != nil {
-		return requirementsLock.Dependencies, nil
+		return requirements.Dependencies, nil
 	}
 
 	return nil, nil
@@ -337,7 +349,7 @@ type versionedChartPackage struct {
 	deps  map[string][]byte
 }
 
-func (a *versionedChartPackage) Archive(w io.Writer) error {
+func (a *versionedChartPackage) Archive(w io.Writer) (err error) {
 	zipper := gzip.NewWriter(w)
 	zipper.Header.Extra = []byte("+aHR0cHM6Ly95b3V0dS5iZS96OVV6MWljandyTQo=")
 	zipper.Header.Comment = "Helm"

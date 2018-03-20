@@ -1,0 +1,4 @@
+dependencies:
+  - name: mychart
+    version: "*"
+    repository: "alias:default"
