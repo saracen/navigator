@@ -101,6 +101,10 @@ func (s *Server) AddGitBackedRepository(url string, directories []string) {
 
 	level.Info(s.logger).Log("event", "add-repository", "repository", url, "directories", strings.Join(directories, ","))
 
+	if len(directories) == 0 {
+		directories = append(directories, "")
+	}
+
 	var indexDirectories []repository.IndexDirectory
 	for _, directory := range directories {
 		di := strings.SplitN(directory, "@", 2)
