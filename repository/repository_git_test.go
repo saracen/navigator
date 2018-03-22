@@ -32,28 +32,32 @@ func (suite *RepositoryGitTestSuite) SetupSuite() {
 	dependencyManager := NewDependencyManager(logger, suite.indexManager)
 
 	suite.repo = NewGitBackedRepository(logger, dependencyManager, "", "../.git", []IndexDirectory{{Name: "repository/testdata/charts", IndexName: "default"}})
-	suite.Nil(suite.repo.Update(), "error updating git repository")
-	suite.Nil(suite.repo.Update(), "error fetching new git updates")
+
+	// clone
+	suite.Nil(suite.repo.Update())
+
+	// fetch
+	suite.Nil(suite.repo.Update())
 }
 
 func (suite *RepositoryGitTestSuite) TestURL() {
-	suite.Equal("../.git", suite.repo.URL(), "git url not as expected")
+	suite.Equal("../.git", suite.repo.URL())
 }
 
 func (suite *RepositoryGitTestSuite) TestChartPackage() {
 	index, err := suite.indexManager.Get("default")
-	if !suite.NoError(err, "error getting default index") {
+	if !suite.NoError(err) {
 		return
 	}
 
 	for _, testChart := range testCharts {
 		chart, err := index.Get(testChart.Name, testChart.Version)
-		if suite.NoError(err, "error checking index for package") {
+		if suite.NoError(err) {
 			name := path.Dir(chart.URLs[0])
 
 			archiver, err := suite.repo.ChartPackage(name)
-			if suite.NoError(err, "error finding chart package in repository") {
-				suite.Nil(archiver.Archive(new(bytes.Buffer)), "no error archiving chart package")
+			if suite.NoError(err) {
+				suite.Nil(archiver.Archive(new(bytes.Buffer)))
 			}
 		}
 	}

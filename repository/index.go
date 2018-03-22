@@ -46,7 +46,7 @@ func (i *Index) Add(md *chart.Metadata, urls []string, createdAt time.Time) bool
 		if err != nil {
 			// If this is the first of this package+version, add it to the index
 			i.file.Entries[md.Name] = append(ee, cr)
-		} else if cv.Created.After(cr.Created) {
+		} else if cr.Created.After(cv.Created) {
 			// If this package+version already exists, always index the latest
 			*cv = *cr
 		} else {
@@ -110,5 +110,5 @@ func (i *Index) Unmarshal(data []byte) error {
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
 
-	return yaml.Unmarshal(data, &i.file)
+	return yaml.Unmarshal(data, i.file)
 }

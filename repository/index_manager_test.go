@@ -18,12 +18,12 @@ func (suite *IndexManagerTestSuite) SetupSuite() {
 
 func (suite *IndexManagerTestSuite) TestGetExisting() {
 	_, err := suite.indexManager.Get("default")
-	suite.NoError(err, "error getting existing index")
+	suite.NoError(err)
 }
 
 func (suite *IndexManagerTestSuite) TestGetMissing() {
 	_, err := suite.indexManager.Get("stable")
-	suite.Error(err, "stable index should not exist")
+	suite.Error(err)
 }
 
 func (suite *IndexManagerTestSuite) TestNames() {

@@ -1,10 +1,40 @@
 package repository
 
 import (
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 )
+
+type FakeRepository struct {
+}
+
+func (r *FakeRepository) URL() string {
+	return ""
+}
+
+func (r *FakeRepository) Name() string {
+	return "fake"
+}
+
+func (r *FakeRepository) ChartPackage(name string) (Archiver, error) {
+	if name == "error" {
+		return &FakeArchiver{}, ErrInvalidPackageName
+	}
+	return &FakeArchiver{}, nil
+}
+
+func (r *FakeRepository) Update() error {
+	return nil
+}
+
+type FakeArchiver struct {
+}
+
+func (a *FakeArchiver) Archive(io.Writer) error {
+	return nil
+}
 
 type RepositoryTestSuite struct {
 	suite.Suite
@@ -17,9 +47,9 @@ func (suite *RepositoryTestSuite) TestIndexDirectoryMatch() {
 		{IndexName: "default", Name: "stable/charts"},
 	}
 
-	suite.False(directories.Match("incubator"), "should not match")
-	suite.True(directories.Match("stable/charts/mycharts"), "should match")
-	suite.True(directories.Match("stable"), "should match")
+	suite.False(directories.Match("incubator"))
+	suite.True(directories.Match("stable/charts/mycharts"))
+	suite.True(directories.Match("stable"))
 }
 
 func TestRepositoryTestSuite(t *testing.T) {

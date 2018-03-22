@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,11 @@ type DependencyManager struct {
 type singleflightIndex struct {
 	*Index
 	sync.Mutex
+}
+
+type repositoryLink struct {
+	Alias string
+	URL   *url.URL
 }
 
 // NewDependencyManager returns a new dependency manager.
@@ -77,34 +83,41 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 	defer cancel()
 
 	for idx, dep := range dependencies {
+		var err error
+
+		link := &repositoryLink{}
 		alias := strings.HasPrefix(dep.Repository, "@") || strings.HasPrefix(dep.Repository, "alias:")
-		if !alias {
-			repository, err := url.Parse(dep.Repository)
+		if alias {
+			link.Alias = strings.TrimPrefix(strings.TrimPrefix(dep.Repository, "alias:"), "@")
+		} else {
+			link.URL, err = url.Parse(dep.Repository)
 			if err != nil {
 				return nil, fmt.Errorf("Chart dependency %v:%v has invalid repository: %v", dep.Name, dep.Version, dep.Repository)
 			}
 
-			if repository.Scheme != "http" && repository.Scheme != "https" {
-				return nil, fmt.Errorf("Chart dependency %v:%v has unsupported repository scheme: %v://", dep.Name, dep.Version, repository.Scheme)
+			if link.URL.Scheme != "http" && link.URL.Scheme != "https" {
+				return nil, fmt.Errorf("Chart dependency %v:%v has unsupported repository scheme: %v://", dep.Name, dep.Version, link.URL.Scheme)
 			}
+
+			link.URL.Path = path.Join(link.URL.Path, "index.yaml")
 		}
 
 		wg.Add(1)
-		go func(idx int, dep *chartutil.Dependency, alias bool) {
+		go func(idx int, dep *chartutil.Dependency, link *repositoryLink) {
 			defer wg.Done()
 
-			if alias {
-				states[idx].data, states[idx].err = dm.fetchLocalPackage(dep)
+			if link.URL == nil {
+				states[idx].data, states[idx].err = dm.fetchLocalPackage(dep, link)
 				return
 			}
 
-			url, err := dm.getPackageURL(dep)
+			packageURL, err := dm.getPackageURL(dep, link)
 			if err != nil {
 				states[idx].err = err
 				return
 			}
 
-			archive, err := dm.download(ctx, url)
+			archive, err := dm.download(ctx, packageURL)
 			if err != nil {
 				states[idx].err = err
 				cancel()
@@ -112,7 +125,7 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 			}
 
 			states[idx].data = archive
-		}(idx, dep, alias)
+		}(idx, dep, link)
 	}
 
 	wg.Wait()
@@ -129,9 +142,8 @@ func (dm *DependencyManager) Download(dependencies []*chartutil.Dependency) (map
 	return archives, nil
 }
 
-func (dm *DependencyManager) fetchLocalPackage(dep *chartutil.Dependency) (body []byte, err error) {
-	indexName := strings.TrimPrefix(strings.TrimPrefix(dep.Repository, "alias:"), "@")
-	index, err := dm.indexManager.Get(indexName)
+func (dm *DependencyManager) fetchLocalPackage(dep *chartutil.Dependency, link *repositoryLink) (body []byte, err error) {
+	index, err := dm.indexManager.Get(link.Alias)
 	if err != nil {
 		return nil, err
 	}
@@ -152,19 +164,16 @@ func (dm *DependencyManager) fetchLocalPackage(dep *chartutil.Dependency) (body 
 	return buf.Bytes(), err
 }
 
-func (dm *DependencyManager) download(ctx context.Context, url string) (body []byte, err error) {
+func (dm *DependencyManager) download(ctx context.Context, downloadURL *url.URL) (body []byte, err error) {
 	defer func(begin time.Time) {
 		if err == nil {
-			level.Info(dm.logger).Log("event", "download", "url", url, "took", time.Since(begin))
+			level.Info(dm.logger).Log("event", "download", "url", downloadURL, "took", time.Since(begin))
 		} else {
-			level.Error(dm.logger).Log("event", "download", "url", url, "took", time.Since(begin), "err", err)
+			level.Error(dm.logger).Log("event", "download", "url", downloadURL, "took", time.Since(begin), "err", err)
 		}
 	}(time.Now())
 
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
+	req, _ := http.NewRequest("GET", downloadURL.String(), nil)
 	req = req.WithContext(ctx)
 
 	resp, err := dm.client.Do(req)
@@ -189,7 +198,7 @@ func (dm *DependencyManager) repository(repository string) *singleflightIndex {
 	return dm.remote[repository]
 }
 
-func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, error) {
+func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency, link *repositoryLink) (*url.URL, error) {
 	index := dm.repository(dep.Repository)
 
 	index.Lock()
@@ -198,19 +207,19 @@ func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, e
 	// update repository if dependency doesn't exist
 	// todo: when else do we update a remote repository?
 	if _, err := index.Get(dep.Name, dep.Version); err != nil {
-		body, err := dm.download(context.TODO(), fmt.Sprintf("%s/index.yaml", strings.TrimSuffix(dep.Repository, "/")))
+		body, err := dm.download(context.TODO(), link.URL)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		if err := index.Unmarshal(body); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
 	chart, err := index.Get(dep.Name, dep.Version)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var rawChartURL string
@@ -223,8 +232,8 @@ func (dm *DependencyManager) getPackageURL(dep *chartutil.Dependency) (string, e
 		chartURL, err = url.Parse(dep.Repository + "/" + chartURL.Path)
 	}
 	if err != nil {
-		return "", fmt.Errorf("Chart dependency %v:%v has invalid package url: %v", dep.Name, dep.Version, rawChartURL)
+		return nil, fmt.Errorf("Chart dependency %v:%v has invalid package url: %v", dep.Name, dep.Version, rawChartURL)
 	}
 
-	return chartURL.String(), nil
+	return chartURL, nil
 }

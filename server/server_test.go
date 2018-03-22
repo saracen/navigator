@@ -12,41 +12,64 @@ import (
 
 type ServerTestSuite struct {
 	suite.Suite
-	srv *Server
+	navigator *Server
+	ts        *httptest.Server
 }
 
 func (suite *ServerTestSuite) SetupSuite() {
-	suite.srv = New(log.NewNopLogger())
-	suite.srv.AddGitBackedRepository("../.git", []string{"repository/testdata/charts@test"})
+	suite.navigator = New(log.NewNopLogger())
+	suite.NotNil(suite.navigator.Logger())
+
+	suite.navigator.AddGitBackedRepository("../.git", []string{})
+	suite.navigator.AddGitBackedRepository("../.git", []string{"repository/testdata/charts@test"})
+
+	suite.ts = httptest.NewServer(MetricMiddleware(suite.navigator))
+}
+
+func (suite *ServerTestSuite) TearDownSuite() {
+	suite.ts.Close()
 }
 
 func (suite *ServerTestSuite) TestServeHTTP() {
-	if !suite.NoError(suite.srv.UpdateRepositories()) {
+	if !suite.NoError(suite.navigator.UpdateRepositories()) {
 		return
 	}
 
-	ts := httptest.NewServer(MetricMiddleware(suite.srv))
-	defer ts.Close()
-
-	res, err := http.Get(ts.URL + "/test/index.yaml")
-	if suite.NoError(err) {
-		_, err := ioutil.ReadAll(res.Body)
+	resp, err := http.Get(suite.ts.URL + "/test/index.yaml")
+	if suite.NoError(err) && suite.Equal(http.StatusOK, resp.StatusCode) {
+		_, err := ioutil.ReadAll(resp.Body)
 		suite.NoError(err)
-		suite.NoError(res.Body.Close())
+		suite.NoError(resp.Body.Close())
 	}
 
-	index, err := suite.srv.indexManager.Get("test")
+	index, err := suite.navigator.indexManager.Get("test")
 	if !suite.NoError(err) {
 		return
 	}
 
 	chart, err := index.Get("mychart", "0.1.0")
-	if suite.NoError(err) {
-		res, err := http.Get(ts.URL + "/" + chart.URLs[0])
-		if suite.NoError(err) {
-			_, err := ioutil.ReadAll(res.Body)
-			suite.NoError(err)
-			suite.NoError(res.Body.Close())
+	if !suite.NoError(err) {
+		return
+	}
+
+	resp, err = http.Get(suite.ts.URL + "/" + chart.URLs[0])
+	if suite.NoError(err) && suite.Equal(http.StatusOK, resp.StatusCode) {
+		_, err := ioutil.ReadAll(resp.Body)
+		suite.NoError(err)
+		suite.NoError(resp.Body.Close())
+	}
+
+	tests := map[string]int{
+		"/unknown/index.yaml":          http.StatusNotFound,
+		"/unknown/chart":               http.StatusNotFound,
+		"/unknown/unknown/unknown":     http.StatusNotFound,
+		"/" + chart.URLs[0] + "/error": http.StatusInternalServerError,
+	}
+
+	for path, code := range tests {
+		resp, err = http.Get(suite.ts.URL + path)
+		if suite.NoError(err, path) {
+			suite.Equal(code, resp.StatusCode, path)
 		}
 	}
 }

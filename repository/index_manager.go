@@ -43,8 +43,10 @@ func (m *IndexManager) Names() []string {
 }
 
 // Create creates a new named index
-func (m *IndexManager) Create(name string) {
+func (m *IndexManager) Create(name string) *Index {
 	if _, ok := m.indexes[name]; !ok {
 		m.indexes[name] = NewIndex()
 	}
+
+	return m.indexes[name]
 }
