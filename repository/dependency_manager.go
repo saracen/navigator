@@ -153,7 +153,8 @@ func (dm *DependencyManager) fetchLocalPackage(dep *chartutil.Dependency, link *
 		return nil, err
 	}
 
-	archiver, err := dm.local[chart.Annotations[RepositoryAnnotation]].ChartPackage(chart.Annotations[PathAnnotation])
+	repo, directory := repoCommitChartFromPath(chart.URLs[0])
+	archiver, err := dm.local[repo].ChartPackage(directory)
 	if err != nil {
 		return nil, err
 	}

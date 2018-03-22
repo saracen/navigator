@@ -91,12 +91,8 @@ func (suite *DependencyManagerTestSuite) TestRepositoryURL() {
 	md := &chart.Metadata{
 		Name:    "mychart",
 		Version: "0.1.0",
-		Annotations: map[string]string{
-			RepositoryAnnotation: "fake",
-			PathAnnotation:       "error",
-		},
 	}
-	index.Add(md, []string{"invalid://test"}, time.Now())
+	index.Add(md, []string{"fake/error/filename.tgz"}, time.Now())
 	suite.dm.AddRepository(&FakeRepository{})
 
 	invalids := []string{

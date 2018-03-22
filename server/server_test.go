@@ -42,6 +42,15 @@ func (suite *ServerTestSuite) TestServeHTTP() {
 		suite.NoError(resp.Body.Close())
 	}
 
+	req, _ := http.NewRequest("GET", suite.ts.URL+"/test/index.yaml", nil)
+	req.Header.Set("Accept-Encoding", "")
+	resp, err = http.DefaultClient.Do(req)
+	if suite.NoError(err) && suite.Equal(http.StatusOK, resp.StatusCode) {
+		_, err := ioutil.ReadAll(resp.Body)
+		suite.NoError(err)
+		suite.NoError(resp.Body.Close())
+	}
+
 	index, err := suite.navigator.indexManager.Get("test")
 	if !suite.NoError(err) {
 		return

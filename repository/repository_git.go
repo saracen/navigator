@@ -3,7 +3,6 @@ package repository
 import (
 	"archive/tar"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -182,23 +181,14 @@ func (r *repository) processFile(c *object.Commit, directory IndexDirectory) fun
 			return nil
 		}
 
-		filename := fmt.Sprintf("%s-%s.tgz", md.Name, md.Version)
-		url := path.Join(r.name, c.Hash.String(), directory.Name, path.Dir(f.Name), filename)
-
 		// get index for this repository
 		index, err := r.indexManager.Get(directory.IndexName)
 		if err != nil {
 			return err
 		}
 
-		// add annotation so the dependency manager can easily find what repository this chart belongs to
-		if md.Annotations == nil {
-			md.Annotations = make(map[string]string)
-		}
-		md.Annotations[RepositoryAnnotation] = r.name
-		md.Annotations[PathAnnotation] = path.Join(c.Hash.String(), directory.Name)
-
 		// index chart
+		url := repoCommitChartToPath(r.name, c.Hash.String(), path.Join(directory.Name, path.Dir(f.Name)), md.Name, md.Version)
 		if added := index.Add(md, []string{url}, c.Committer.When); added {
 			level.Debug(r.logger).Log("event", "indexed", "commit", c.Hash.String(), "directory", directory.Name, "file", f.Name, "chart", md.Name, "version", md.Version)
 		}
@@ -210,12 +200,10 @@ func (r *repository) processFile(c *object.Commit, directory IndexDirectory) fun
 // VersionedChartPackage returns a versioned chart package that exists in the
 // git repository at the commit and chart name provided.
 func (r *repository) ChartPackage(name string) (Archiver, error) {
-	commitName := strings.SplitN(name, "/", 2)
-	if len(commitName) != 2 {
+	commit, name := pathHeadTail(name)
+	if name == "" {
 		return nil, ErrInvalidPackageName
 	}
-
-	commit, name := commitName[0], commitName[1]
 
 	hash := plumbing.NewHash(commit)
 	c, err := r.backend.CommitObject(hash)
@@ -256,7 +244,7 @@ func (r *repository) ChartPackage(name string) (Archiver, error) {
 		return nil, err
 	}
 
-	return &versionedChartPackage{commitName[1], rules, tree.Files(), deps}, nil
+	return &versionedChartPackage{name, rules, tree.Files(), deps}, nil
 }
 
 func (r *repository) loadMetadataFile(f *object.File) (*chart.Metadata, error) {

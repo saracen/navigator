@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"path"
 	"testing"
 
 	"bytes"
@@ -31,7 +30,7 @@ func (suite *RepositoryGitTestSuite) SetupSuite() {
 	logger := log.NewNopLogger()
 	dependencyManager := NewDependencyManager(logger, suite.indexManager)
 
-	suite.repo = NewGitBackedRepository(logger, dependencyManager, "", "../.git", []IndexDirectory{{Name: "repository/testdata/charts", IndexName: "default"}})
+	suite.repo = NewGitBackedRepository(logger, dependencyManager, "repo", "../.git", []IndexDirectory{{Name: "repository/testdata/charts", IndexName: "default"}})
 
 	// clone
 	suite.Nil(suite.repo.Update())
@@ -53,7 +52,7 @@ func (suite *RepositoryGitTestSuite) TestChartPackage() {
 	for _, testChart := range testCharts {
 		chart, err := index.Get(testChart.Name, testChart.Version)
 		if suite.NoError(err) {
-			name := path.Dir(chart.URLs[0])
+			_, name := repoCommitChartFromPath(chart.URLs[0])
 
 			archiver, err := suite.repo.ChartPackage(name)
 			if suite.NoError(err) {

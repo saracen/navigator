@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io"
 	"sync"
 	"time"
@@ -15,9 +17,9 @@ import (
 type Index struct {
 	mutex sync.RWMutex
 	file  *repo.IndexFile
-	cache []byte
 
-	cached bool
+	cache           []byte
+	cacheCompressed []byte
 }
 
 // NewIndex returns a new Index.
@@ -84,12 +86,19 @@ func (i *Index) Count() (int, int) {
 // is cached so that subsequent calls won't re-serialize an index that has not
 // changed.
 func (i *Index) WriteTo(w io.Writer) (n int64, err error) {
-	i.mutex.RLock()
-	if i.cache != nil {
-		written, err := w.Write(i.cache)
+	return i.writeTo(w, false)
+}
+
+// CompressedWriteTo is the same as WriteTo but with gzip compressed data.
+func (i *Index) CompressedWriteTo(w io.Writer) (n int64, err error) {
+	return i.writeTo(w, true)
+}
+
+func (i *Index) writeTo(w io.Writer, compressed bool) (n int64, err error) {
+	written, err := i.writeCache(w, compressed)
+	if err != nil || written > 0 {
 		return int64(written), err
 	}
-	i.mutex.RUnlock()
 
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
@@ -101,14 +110,43 @@ func (i *Index) WriteTo(w io.Writer) (n int64, err error) {
 		return 0, err
 	}
 
-	written, err := w.Write(i.cache)
+	buf := new(bytes.Buffer)
+	compressor, _ := gzip.NewWriterLevel(buf, gzip.BestCompression)
+	if _, err = compressor.Write(i.cache); err != nil {
+		return 0, err
+	}
+
+	compressor.Close()
+	i.cacheCompressed = buf.Bytes()
+
+	if compressed {
+		written, err = w.Write(i.cacheCompressed)
+	} else {
+		written, err = w.Write(i.cache)
+	}
+
 	return int64(written), err
+}
+
+func (i *Index) writeCache(w io.Writer, compressed bool) (int, error) {
+	i.mutex.RLock()
+	defer i.mutex.RUnlock()
+
+	if i.cache == nil {
+		return 0, nil
+	}
+	if compressed {
+		return w.Write(i.cacheCompressed)
+	}
+	return w.Write(i.cache)
 }
 
 // Unmarshal decodes a YAML serialized repository index.
 func (i *Index) Unmarshal(data []byte) error {
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
+
+	i.cache = nil
 
 	return yaml.Unmarshal(data, i.file)
 }

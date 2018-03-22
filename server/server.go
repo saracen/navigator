@@ -71,9 +71,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) (code int, err er
 			return http.StatusNotFound, repository.ErrIndexNotFound
 		}
 
-		if _, err = index.WriteTo(w); err != nil {
-			return http.StatusInternalServerError, err
+		w.Header().Set("Content-Type", "text/yaml")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Del("Content-Length")
+
+			if _, err = index.CompressedWriteTo(w); err != nil {
+				return http.StatusInternalServerError, err
+			}
+		} else {
+			if _, err = index.WriteTo(w); err != nil {
+				return http.StatusInternalServerError, err
+			}
 		}
+
 		return http.StatusOK, nil
 	}
 
@@ -89,6 +100,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) (code int, err er
 			return http.StatusInternalServerError, err
 		}
 
+		w.Header().Set("Content-Type", "application/x-tar")
 		if err = vcp.Archive(w); err != nil {
 			return http.StatusInternalServerError, err
 		}

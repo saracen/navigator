@@ -57,13 +57,31 @@ func (suite *IndexTestSuite) TestCount() {
 
 func (suite *IndexTestSuite) TestWriteTo() {
 	buf := new(bytes.Buffer)
+
+	// initial write
 	_, err := suite.index.WriteTo(buf)
-	if suite.NoError(err) {
-		suite.NoError(err, suite.index.Unmarshal(buf.Bytes()))
-	}
+	suite.NoError(err)
 
 	// test cache
+	buf.Reset()
+	_, err = suite.index.CompressedWriteTo(buf)
+	suite.NoError(err)
+
+	// test cache
+	buf.Reset()
 	_, err = suite.index.WriteTo(buf)
+	if suite.NoError(err) {
+		suite.NoError(suite.index.Unmarshal(buf.Bytes()))
+	}
+
+	md := &chart.Metadata{
+		Name:    "newchart",
+		Version: "0.1.0",
+	}
+	suite.True(suite.index.Add(md, []string{"foobar/newchart-0.1.0.tgz"}, time.Now()))
+
+	buf.Reset()
+	_, err = suite.index.CompressedWriteTo(buf)
 	suite.NoError(err)
 }
 

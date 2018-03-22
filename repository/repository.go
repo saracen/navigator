@@ -2,16 +2,10 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"path"
 	"strings"
-)
-
-const (
-	// RepositoryAnnotation is an annotation to tell navigator what repository a chart is from
-	RepositoryAnnotation = "navigator/repository"
-
-	// PathAnnotation is an annotation to tell navigator what path within a repository a chart is from
-	PathAnnotation = "navigator/path"
 )
 
 var (
@@ -51,4 +45,24 @@ func (id IndexDirectories) Match(path string) bool {
 		}
 	}
 	return false
+}
+
+// pathHeadTail is similar to path.Split, but returns the first component of the path (head) and then everything else as the tail
+func pathHeadTail(p string) (string, string) {
+	i := strings.Index(p, "/")
+	if i < 0 {
+		return p, ""
+	}
+	return p[:i], p[i+1:]
+}
+
+// repoCommitChartFromPath returns the repository name and commit chart path from a resource path.
+func repoCommitChartFromPath(p string) (string, string) {
+	head, tail := pathHeadTail(p)
+	return head, path.Dir(tail)
+}
+
+// repoCommitChartToPath returns a path containing the repository and commit chart directory
+func repoCommitChartToPath(repo, commit, directory, name, version string) string {
+	return path.Join(repo, commit, directory, fmt.Sprintf("%s-%s.tgz", name, version))
 }
