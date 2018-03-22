@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/saracen/navigator/server"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 )
@@ -42,7 +45,7 @@ func (i *repositoryURLs) Set(value string) error {
 	return nil
 }
 
-func configure(args []string) (*Server, time.Duration, *http.Server) {
+func configure(args []string) (*server.Server, time.Duration, *http.Server) {
 	fs := flag.NewFlagSet("navigator", flag.ExitOnError)
 
 	var (
@@ -61,18 +64,26 @@ func configure(args []string) (*Server, time.Duration, *http.Server) {
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 	}
 
-	navigator := NewServer(logger)
+	navigator := server.New(logger)
 
 	for _, url := range urls {
 		navigator.AddGitBackedRepository(url.URL, url.Directories)
 	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", prometheus.Handler())
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.Handle("/", server.MetricMiddleware(navigator))
 
 	return navigator, *interval, &http.Server{
 		Addr:         *httpAddr,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-		Handler:      navigator,
+		Handler:      mux,
 	}
 }
 
@@ -84,7 +95,7 @@ func main() {
 		panic(err)
 	}
 
-	level.Info(navigator.logger).Log("event", "listening", "transport", "HTTP", "addr", srv.Addr)
+	level.Info(navigator.Logger()).Log("event", "listening", "transport", "HTTP", "addr", srv.Addr)
 
 	go func() {
 		panic(srv.ListenAndServe())

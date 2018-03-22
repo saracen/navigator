@@ -25,6 +25,13 @@ func (suite *IndexTestSuite) SetupSuite() {
 	suite.index.Add(md, []string{"foobar/mychart-0.1.0.tgz"}, time.Now())
 }
 
+func (suite *IndexTestSuite) TestCount() {
+	packages, versions := suite.index.Count()
+
+	suite.Equal(1, packages)
+	suite.Equal(1, versions)
+}
+
 func (suite *IndexTestSuite) TestWriteTo() {
 	buf := new(bytes.Buffer)
 	_, err := suite.index.WriteTo(buf)

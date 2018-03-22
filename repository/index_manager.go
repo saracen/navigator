@@ -1,6 +1,9 @@
 package repository
 
-import "errors"
+import (
+	"errors"
+	"sort"
+)
 
 var (
 	// ErrIndexNotFound is raised when the named index does not exist
@@ -26,6 +29,17 @@ func (m *IndexManager) Get(name string) (*Index, error) {
 	}
 
 	return nil, ErrIndexNotFound
+}
+
+// Names returns all index names assigned to the manager
+func (m *IndexManager) Names() []string {
+	names := make([]string, 0, len(m.indexes))
+	for name := range m.indexes {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+	return names
 }
 
 // Create creates a new named index

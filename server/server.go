@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/saracen/navigator/repository"
 )
@@ -23,8 +24,8 @@ type Server struct {
 	repos             map[string]repository.Repository
 }
 
-// NewServer returns a new server
-func NewServer(logger log.Logger) *Server {
+// New returns a new server
+func New(logger log.Logger) *Server {
 	indexManager := repository.NewIndexManager()
 	return &Server{
 		logger:            logger,
@@ -32,6 +33,11 @@ func NewServer(logger log.Logger) *Server {
 		dependencyManager: repository.NewDependencyManager(logger, indexManager),
 		repos:             make(map[string]repository.Repository),
 	}
+}
+
+// Logger returns the server logger
+func (s *Server) Logger() log.Logger {
+	return s.logger
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +134,15 @@ func (s *Server) UpdateRepositories() error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// update prometheus metrics for indexed charts
+	for _, indexName := range s.indexManager.Names() {
+		index, _ := s.indexManager.Get(indexName)
+		charts, versions := index.Count()
+
+		chartTotalGauge.With(prometheus.Labels{"index": indexName}).Set(float64(charts))
+		chartVersionTotalGauge.With(prometheus.Labels{"index": indexName}).Set(float64(versions))
 	}
 	return nil
 }

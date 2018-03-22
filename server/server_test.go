@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"io/ioutil"
@@ -16,37 +16,37 @@ type ServerTestSuite struct {
 }
 
 func (suite *ServerTestSuite) SetupSuite() {
-	suite.srv = NewServer(log.NewNopLogger())
-	suite.srv.AddGitBackedRepository("./.git", []string{"repository/testdata/charts@test"})
+	suite.srv = New(log.NewNopLogger())
+	suite.srv.AddGitBackedRepository("../.git", []string{"repository/testdata/charts@test"})
 }
 
 func (suite *ServerTestSuite) TestServeHTTP() {
-	if !suite.NoError(suite.srv.UpdateRepositories(), "error fetching index") {
+	if !suite.NoError(suite.srv.UpdateRepositories()) {
 		return
 	}
 
-	ts := httptest.NewServer(suite.srv)
+	ts := httptest.NewServer(MetricMiddleware(suite.srv))
 	defer ts.Close()
 
-	res, err := http.Get(ts.URL + "/index.yaml")
-	if suite.NoError(err, "error fetching index") {
+	res, err := http.Get(ts.URL + "/test/index.yaml")
+	if suite.NoError(err) {
 		_, err := ioutil.ReadAll(res.Body)
-		res.Body.Close()
-		suite.NoError(err, "error reading index")
+		suite.NoError(err)
+		suite.NoError(res.Body.Close())
 	}
 
 	index, err := suite.srv.indexManager.Get("test")
-	if !suite.NoError(err, "error getting named index") {
+	if !suite.NoError(err) {
 		return
 	}
 
 	chart, err := index.Get("mychart", "0.1.0")
-	if suite.NoError(err, "error checking for chart") {
+	if suite.NoError(err) {
 		res, err := http.Get(ts.URL + "/" + chart.URLs[0])
-		if suite.NoError(err, "error fetching chart") {
+		if suite.NoError(err) {
 			_, err := ioutil.ReadAll(res.Body)
-			res.Body.Close()
-			suite.NoError(err, "error reading chart")
+			suite.NoError(err)
+			suite.NoError(res.Body.Close())
 		}
 	}
 }

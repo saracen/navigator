@@ -26,6 +26,11 @@ func (suite *IndexManagerTestSuite) TestGetMissing() {
 	suite.Error(err, "stable index should not exist")
 }
 
+func (suite *IndexManagerTestSuite) TestNames() {
+	suite.indexManager.Create("new-index")
+	suite.Len(suite.indexManager.Names(), 2)
+}
+
 func TestIndexManagerTestSuite(t *testing.T) {
 	suite.Run(t, new(IndexManagerTestSuite))
 }
