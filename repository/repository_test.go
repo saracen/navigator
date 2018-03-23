@@ -67,7 +67,7 @@ func (suite *RepositoryTestSuite) TestPathUtility() {
 		suite.Equal(headtail[2], tail, headtail[0])
 	}
 
-	path := "repo/commit/long/path/to/chart-0.1.0.tgz"
+	path := "/repo/commit/long/path/to/chart-0.1.0.tgz"
 	repo, chartpath := repoCommitChartFromPath(path)
 	suite.Equal("repo", repo)
 	suite.Equal("commit/long/path/to", chartpath)

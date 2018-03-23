@@ -49,6 +49,8 @@ func (id IndexDirectories) Match(path string) bool {
 
 // pathHeadTail is similar to path.Split, but returns the first component of the path (head) and then everything else as the tail
 func pathHeadTail(p string) (string, string) {
+	p = strings.TrimLeft(p, "/")
+
 	i := strings.Index(p, "/")
 	if i < 0 {
 		return p, ""
@@ -64,5 +66,5 @@ func repoCommitChartFromPath(p string) (string, string) {
 
 // repoCommitChartToPath returns a path containing the repository and commit chart directory
 func repoCommitChartToPath(repo, commit, directory, name, version string) string {
-	return path.Join(repo, commit, directory, fmt.Sprintf("%s-%s.tgz", name, version))
+	return path.Join("/", repo, commit, directory, fmt.Sprintf("%s-%s.tgz", name, version))
 }

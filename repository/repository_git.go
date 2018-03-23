@@ -138,7 +138,7 @@ func (r *repository) parseCommit(c *object.Commit) error {
 	for _, directory := range r.directories {
 		var subtree *object.Tree
 
-		if directory.Name == "" || directory.Name == "." {
+		if directory.Name == "" {
 			subtree = tree
 		} else {
 			subtree, err = tree.Tree(directory.Name)
@@ -244,7 +244,7 @@ func (r *repository) ChartPackage(name string) (Archiver, error) {
 		return nil, err
 	}
 
-	return &versionedChartPackage{name, rules, tree.Files(), deps}, nil
+	return &versionedChartPackage{path.Base(name), rules, tree.Files(), deps}, nil
 }
 
 func (r *repository) loadMetadataFile(f *object.File) (*chart.Metadata, error) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/suite"
+	"k8s.io/helm/pkg/chartutil"
 )
 
 type RepositoryGitTestSuite struct {
@@ -56,7 +57,12 @@ func (suite *RepositoryGitTestSuite) TestChartPackage() {
 
 			archiver, err := suite.repo.ChartPackage(name)
 			if suite.NoError(err) {
-				suite.Nil(archiver.Archive(new(bytes.Buffer)))
+				buf := new(bytes.Buffer)
+
+				if suite.NoError(archiver.Archive(buf)) {
+					_, err := chartutil.LoadArchive(buf)
+					suite.NoError(err)
+				}
 			}
 		}
 	}
